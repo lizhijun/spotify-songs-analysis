@@ -1,43 +1,24 @@
-# Music Industry Trends Analysis
-# Evolution of "trendy" in the music industry over time
+# Music Trends Analysis
+# Analyzing trends in popular music using Spotify dataset
 
 # Load required libraries
 library(ggplot2)
 library(dplyr)
 library(readr)
-library(lubridate)
 library(stringr)
-library(tidyr)
+library(lubridate)
+library(gridExtra)
 library(scales)
 library(viridis)
-library(gridExtra)
+library(tidyr)
 
 # Read data
 spotify_data <- read_csv("spotify_songs.csv")
 
 # Display basic information
-cat("Music Trends Analysis:\n")
+cat("Dataset Overview:\n")
 cat("Total tracks:", nrow(spotify_data), "\n")
-cat("Date range:", min(spotify_data$track_album_release_date, na.rm = TRUE), "to", 
-    max(spotify_data$track_album_release_date, na.rm = TRUE), "\n\n")
-
-# Data preprocessing
-# Convert release date to proper date format and extract year
-spotify_data <- spotify_data %>%
-  mutate(
-    release_date = as.Date(track_album_release_date),
-    release_year = year(release_date),
-    # Calculate title length
-    title_length = nchar(track_name),
-    # Detect collaborations in track names
-    has_collaboration = str_detect(track_name, regex("feat\\.|featuring|ft\\.|with|&|x ", ignore_case = TRUE)),
-    # Clean artist names for collaboration detection
-    has_collab_artist = str_detect(track_artist, regex("&|feat\\.|featuring|ft\\.|with|x ", ignore_case = TRUE))
-  ) %>%
-  # Filter for reasonable years (remove outliers)
-  filter(release_year >= 1990 & release_year <= 2020) %>%
-  # Remove missing values
-  filter(!is.na(release_year), !is.na(track_popularity))
+cat("Date range:", min(spotify_data$track_album_release_date), "to", max(spotify_data$track_album_release_date), "\n\n")
 
 # Custom theme for visualizations
 custom_theme <- theme_minimal() +
@@ -54,336 +35,289 @@ custom_theme <- theme_minimal() +
     plot.margin = margin(15, 15, 15, 15)
   )
 
-# 1. GENRE POPULARITY EVOLUTION OVER TIME
-cat("=== GENRE POPULARITY EVOLUTION ===\n")
+# 1. Track Name Length Analysis
+cat("Analyzing track name length trends...\n")
 
-# Calculate average popularity by genre and year
-genre_trends <- spotify_data %>%
-  group_by(release_year, playlist_genre) %>%
-  summarise(
-    avg_popularity = mean(track_popularity, na.rm = TRUE),
-    track_count = n(),
-    .groups = 'drop'
-  ) %>%
-  filter(track_count >= 10)  # Filter out years with too few tracks
-
-# Display genre trends summary
-genre_summary <- spotify_data %>%
-  group_by(playlist_genre) %>%
-  summarise(
-    total_tracks = n(),
-    avg_popularity = mean(track_popularity, na.rm = TRUE),
-    peak_year = release_year[which.max(track_popularity)],
-    peak_popularity = max(track_popularity, na.rm = TRUE),
-    .groups = 'drop'
-  ) %>%
-  arrange(desc(avg_popularity))
-
-cat("Genre Summary (by average popularity):\n")
-print(genre_summary)
-cat("\n")
-
-# Create genre evolution plot
-genre_evolution_plot <- ggplot(genre_trends, aes(x = release_year, y = avg_popularity, color = playlist_genre)) +
-  geom_line(size = 1.2, alpha = 0.8) +
-  geom_point(size = 2, alpha = 0.7) +
-  scale_color_viridis_d(name = "Genre") +
-  scale_x_continuous(breaks = seq(1990, 2020, 5)) +
-  labs(
-    title = "Evolution of Genre Popularity Over Time",
-    subtitle = "Average track popularity by genre and release year",
-    x = "Release Year",
-    y = "Average Popularity Score",
-    caption = "Only years with 10+ tracks per genre shown"
-  ) +
-  custom_theme +
-  theme(
-    legend.position = "bottom",
-    axis.text.x = element_text(angle = 45, hjust = 1)
+# Extract year from release date and calculate track name length
+spotify_data <- spotify_data %>%
+  mutate(
+    release_year = as.numeric(substr(track_album_release_date, 1, 4)),
+    track_name_length = nchar(track_name)
   )
 
-ggsave("genre_evolution_over_time.png", genre_evolution_plot, 
-       width = 14, height = 10, dpi = 300, bg = "white")
+# Filter for reasonable years (some data might have errors)
+valid_years <- spotify_data %>%
+  filter(release_year >= 1950 & release_year <= 2023)
 
-# 2. SONG TITLE LENGTH TRENDS
-cat("=== SONG TITLE LENGTH TRENDS ===\n")
-
-# Calculate title length trends by year
-title_length_trends <- spotify_data %>%
+# Calculate average track name length by year
+track_name_by_year <- valid_years %>%
   group_by(release_year) %>%
   summarise(
-    avg_title_length = mean(title_length, na.rm = TRUE),
-    median_title_length = median(title_length, na.rm = TRUE),
-    track_count = n(),
+    avg_name_length = mean(track_name_length),
+    count = n(),
     .groups = 'drop'
   ) %>%
-  filter(track_count >= 50)  # Filter years with sufficient data
+  filter(count >= 10)  # Only include years with sufficient data
 
-# Statistical test for trend
-title_trend_test <- cor.test(title_length_trends$release_year, title_length_trends$avg_title_length)
-
-cat("Title Length Trends:\n")
-cat("Correlation between year and average title length:", round(title_trend_test$estimate, 4), "\n")
-cat("P-value:", format.pval(title_trend_test$p.value), "\n")
-cat("Trend direction:", ifelse(title_trend_test$estimate > 0, "INCREASING", "DECREASING"), "\n\n")
-
-# Display title length statistics by decade
-title_by_decade <- spotify_data %>%
-  mutate(decade = floor(release_year / 10) * 10) %>%
-  group_by(decade) %>%
-  summarise(
-    avg_length = round(mean(title_length, na.rm = TRUE), 2),
-    median_length = median(title_length, na.rm = TRUE),
-    min_length = min(title_length, na.rm = TRUE),
-    max_length = max(title_length, na.rm = TRUE),
-    track_count = n(),
-    .groups = 'drop'
-  )
-
-cat("Title Length by Decade:\n")
-print(title_by_decade)
-cat("\n")
-
-# Create title length trend plot
-title_length_plot <- ggplot(title_length_trends, aes(x = release_year)) +
-  geom_line(aes(y = avg_title_length), color = "#2E86AB", size = 1.5, alpha = 0.8) +
-  geom_point(aes(y = avg_title_length), color = "#2E86AB", size = 3, alpha = 0.7) +
-  geom_smooth(aes(y = avg_title_length), method = "lm", color = "#A23B72", 
-              fill = "#A23B72", alpha = 0.2, size = 1) +
-  scale_x_continuous(breaks = seq(1990, 2020, 5)) +
+# Plot track name length trend
+title_length_plot <- ggplot(track_name_by_year, aes(x = release_year, y = avg_name_length)) +
+  geom_line(color = "#2E86AB", linewidth = 1.2) +
+  geom_point(color = "#A23B72", size = 2) +
+  geom_smooth(method = "loess", color = "#F18F01", se = TRUE, linewidth = 1, alpha = 0.2) +
   labs(
-    title = "Evolution of Song Title Length Over Time",
-    subtitle = paste("Average title length trend (correlation =", 
-                     round(title_trend_test$estimate, 3), ")"),
+    title = "Track Title Length Over Time",
+    subtitle = "Average number of characters in song titles by year",
     x = "Release Year",
-    y = "Average Title Length (characters)",
-    caption = "Blue line: actual data, Purple line: trend line"
+    y = "Average Title Length (characters)"
   ) +
-  custom_theme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  scale_x_continuous(breaks = seq(min(track_name_by_year$release_year), 
+                                 max(track_name_by_year$release_year), 
+                                 by = 5)) +
+  custom_theme
 
 ggsave("title_length_trends.png", title_length_plot, 
        width = 12, height = 8, dpi = 300, bg = "white")
 
-# 3. COLLABORATION ANALYSIS
-cat("=== COLLABORATION ANALYSIS ===\n")
+# 2. Collaboration Analysis
+cat("Analyzing collaboration effects on popularity...\n")
 
-# Analyze collaboration patterns
-collab_analysis <- spotify_data %>%
+# Identify collaborations (tracks with "feat.", "with", "&", "," in artist name)
+spotify_data <- spotify_data %>%
   mutate(
-    collaboration = case_when(
-      has_collaboration | has_collab_artist ~ "Collaboration",
-      TRUE ~ "Solo"
+    is_collaboration = case_when(
+      grepl("feat\\.|ft\\.|with|,|&", track_artist, ignore.case = TRUE) ~ TRUE,
+      TRUE ~ FALSE
     )
   )
 
-# Overall collaboration statistics
-collab_stats <- collab_analysis %>%
-  group_by(collaboration) %>%
+# Compare popularity of collaborations vs. solo tracks
+collab_vs_solo <- spotify_data %>%
+  group_by(is_collaboration) %>%
   summarise(
-    track_count = n(),
-    avg_popularity = mean(track_popularity, na.rm = TRUE),
-    median_popularity = median(track_popularity, na.rm = TRUE),
+    avg_popularity = mean(track_popularity),
+    median_popularity = median(track_popularity),
+    count = n(),
     .groups = 'drop'
-  ) %>%
-  mutate(percentage = round(track_count / sum(track_count) * 100, 2))
+  )
 
-cat("Overall Collaboration Statistics:\n")
-print(collab_stats)
-cat("\n")
+# Plot collaboration vs. popularity
+collab_plot <- ggplot(collab_vs_solo, aes(x = factor(is_collaboration, 
+                                                    labels = c("Solo", "Collaboration")), 
+                                         y = avg_popularity, 
+                                         fill = factor(is_collaboration))) +
+  geom_col(alpha = 0.8, width = 0.6) +
+  geom_text(aes(label = round(avg_popularity, 1)), 
+            vjust = -0.5, size = 4, fontface = "bold") +
+  labs(
+    title = "Impact of Collaborations on Track Popularity",
+    subtitle = "Average popularity score for solo tracks vs. collaborations",
+    x = "Track Type",
+    y = "Average Popularity Score"
+  ) +
+  scale_fill_manual(values = c("#2E86AB", "#A23B72"), 
+                    name = "Track Type") +
+  ylim(0, max(collab_vs_solo$avg_popularity) * 1.2) +
+  custom_theme +
+  theme(legend.position = "none")
 
-# Statistical test for collaboration effect
-collab_test <- t.test(track_popularity ~ collaboration, data = collab_analysis)
-cat("T-test for collaboration effect on popularity:\n")
-cat("Mean popularity - Collaboration:", round(collab_test$estimate[1], 2), "\n")
-cat("Mean popularity - Solo:", round(collab_test$estimate[2], 2), "\n")
-cat("Difference:", round(collab_test$estimate[1] - collab_test$estimate[2], 2), "\n")
-cat("P-value:", format.pval(collab_test$p.value), "\n")
-cat("Effect:", ifelse(collab_test$p.value < 0.05, "SIGNIFICANT", "NOT SIGNIFICANT"), "\n\n")
+ggsave("collaboration_effect.png", collab_plot, 
+       width = 10, height = 8, dpi = 300, bg = "white")
 
 # Collaboration trends over time
-collab_trends <- collab_analysis %>%
-  group_by(release_year, collaboration) %>%
+collab_by_year <- spotify_data %>%
+  filter(release_year >= 1950 & release_year <= 2023) %>%
+  group_by(release_year) %>%
   summarise(
-    track_count = n(),
-    avg_popularity = mean(track_popularity, na.rm = TRUE),
+    collab_percentage = mean(is_collaboration) * 100,
+    count = n(),
     .groups = 'drop'
   ) %>%
-  group_by(release_year) %>%
-  mutate(
-    total_tracks = sum(track_count),
-    percentage = track_count / total_tracks * 100
-  ) %>%
-  filter(total_tracks >= 50)
+  filter(count >= 10)  # Only include years with sufficient data
 
-# Create collaboration trends plot
-collab_trends_plot <- ggplot(collab_trends, aes(x = release_year, y = percentage, fill = collaboration)) +
-  geom_area(alpha = 0.7, position = "stack") +
-  scale_fill_manual(values = c("Collaboration" = "#A23B72", "Solo" = "#2E86AB"),
-                    name = "Track Type") +
-  scale_x_continuous(breaks = seq(1990, 2020, 5)) +
-  scale_y_continuous(labels = percent_format(scale = 1)) +
+# Plot collaboration trends
+collab_trend_plot <- ggplot(collab_by_year, aes(x = release_year, y = collab_percentage)) +
+  geom_line(color = "#2E86AB", linewidth = 1.2) +
+  geom_point(color = "#A23B72", size = 2) +
+  geom_smooth(method = "loess", color = "#F18F01", se = TRUE, linewidth = 1, alpha = 0.2) +
   labs(
-    title = "Evolution of Collaborations in Music",
-    subtitle = "Percentage of collaborative vs solo tracks over time",
+    title = "Collaboration Trends Over Time",
+    subtitle = "Percentage of tracks featuring collaborations by year",
     x = "Release Year",
-    y = "Percentage of Tracks",
-    caption = "Based on track names and artist credits"
+    y = "Collaboration Percentage (%)"
   ) +
-  custom_theme +
-  theme(
-    legend.position = "bottom",
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  )
+  scale_x_continuous(breaks = seq(min(collab_by_year$release_year), 
+                                 max(collab_by_year$release_year), 
+                                 by = 5)) +
+  scale_y_continuous(limits = c(0, max(collab_by_year$collab_percentage) * 1.1)) +
+  custom_theme
 
-ggsave("collaboration_trends.png", collab_trends_plot, 
+ggsave("collaboration_trends.png", collab_trend_plot, 
        width = 12, height = 8, dpi = 300, bg = "white")
 
-# 4. COLLABORATION POPULARITY BY GENRE
-collab_by_genre <- collab_analysis %>%
-  group_by(playlist_genre, collaboration) %>%
+# Collaboration effect by genre
+collab_by_genre <- spotify_data %>%
+  group_by(playlist_genre, is_collaboration) %>%
   summarise(
-    track_count = n(),
-    avg_popularity = mean(track_popularity, na.rm = TRUE),
+    avg_popularity = mean(track_popularity),
+    count = n(),
     .groups = 'drop'
   ) %>%
-  pivot_wider(names_from = collaboration, values_from = c(track_count, avg_popularity)) %>%
+  filter(count >= 10) %>%  # Only include genres with sufficient data
+  pivot_wider(
+    names_from = is_collaboration,
+    values_from = avg_popularity,
+    names_prefix = "popularity_"
+  ) %>%
   mutate(
-    collab_advantage = `avg_popularity_Collaboration` - `avg_popularity_Solo`,
-    collab_percentage = `track_count_Collaboration` / (`track_count_Collaboration` + `track_count_Solo`) * 100
+    popularity_diff = popularity_TRUE - popularity_FALSE,
+    effect = ifelse(popularity_diff > 0, "Positive", "Negative")
   )
 
-cat("Collaboration Effect by Genre:\n")
-print(collab_by_genre %>% 
-      select(playlist_genre, collab_advantage, collab_percentage) %>%
-      arrange(desc(collab_advantage)))
-cat("\n")
-
-# Create collaboration effect by genre plot
-collab_genre_plot <- ggplot(collab_by_genre, aes(x = reorder(playlist_genre, collab_advantage), 
-                                                 y = collab_advantage)) +
-  geom_col(fill = "#2E86AB", alpha = 0.8, width = 0.7) +
-  geom_text(aes(label = paste0(ifelse(collab_advantage > 0, "+", ""), round(collab_advantage, 1))),
-            hjust = ifelse(collab_by_genre$collab_advantage > 0, -0.1, 1.1),
-            size = 4, color = "grey30", fontface = "bold") +
+# Plot collaboration effect by genre
+collab_genre_plot <- ggplot(collab_by_genre, aes(x = reorder(playlist_genre, popularity_diff), 
+                                               y = popularity_diff,
+                                               fill = effect)) +
+  geom_col(alpha = 0.8, width = 0.7) +
+  geom_text(aes(label = round(popularity_diff, 1)), 
+            hjust = ifelse(collab_by_genre$popularity_diff > 0, -0.1, 1.1),
+            size = 4, fontface = "bold", color = "grey30") +
   coord_flip() +
+  scale_fill_manual(values = c("Negative" = "#A23B72", "Positive" = "#2E86AB")) +
   labs(
-    title = "Collaboration Effect on Popularity by Genre",
-    subtitle = "Difference in average popularity: Collaboration - Solo",
-    x = "Music Genre",
-    y = "Popularity Advantage of Collaborations",
-    caption = "Positive values indicate collaborations are more popular"
+    title = "Impact of Collaborations by Genre",
+    subtitle = "Difference in popularity between collaborations and solo tracks",
+    x = "Genre",
+    y = "Popularity Difference (Collaboration - Solo)"
   ) +
   custom_theme +
-  theme(panel.grid.major.y = element_blank())
+  theme(legend.position = "none")
 
 ggsave("collaboration_effect_by_genre.png", collab_genre_plot, 
        width = 12, height = 8, dpi = 300, bg = "white")
 
-# 5. COMPREHENSIVE TRENDS DASHBOARD
-# Create a summary of key trends
-trends_summary <- data.frame(
-  Metric = c("Genre with highest average popularity", 
-             "Genre with most growth potential",
-             "Title length trend",
-             "Collaboration effect on popularity",
-             "Most collaborative genre",
-             "Decade with longest titles"),
-  Finding = c(
-    paste(genre_summary$playlist_genre[1], "(", round(genre_summary$avg_popularity[1], 1), ")"),
-    "Analysis by year-over-year growth needed",
-    ifelse(title_trend_test$estimate > 0, "Getting LONGER", "Getting SHORTER"),
-    ifelse(collab_test$p.value < 0.05, 
-           paste("SIGNIFICANT advantage:", round(collab_test$estimate[1] - collab_test$estimate[2], 1), "points"),
-           "NO significant effect"),
-    paste(collab_by_genre$playlist_genre[which.max(collab_by_genre$collab_percentage)], 
-          "(", round(max(collab_by_genre$collab_percentage, na.rm = TRUE), 1), "%)"),
-    paste(title_by_decade$decade[which.max(title_by_decade$avg_length)], "s",
-          "(", title_by_decade$avg_length[which.max(title_by_decade$avg_length)], " chars)")
+# 3. Other Trends Analysis
+cat("Analyzing other music trends...\n")
+
+# Genre popularity over time
+genre_by_year <- spotify_data %>%
+  filter(release_year >= 1950 & release_year <= 2023) %>%
+  group_by(release_year, playlist_genre) %>%
+  summarise(
+    avg_popularity = mean(track_popularity),
+    count = n(),
+    .groups = 'drop'
+  ) %>%
+  filter(count >= 5)  # Only include year-genre combinations with sufficient data
+
+# Plot genre evolution
+genre_evolution_plot <- ggplot(genre_by_year, aes(x = release_year, 
+                                                y = avg_popularity, 
+                                                color = playlist_genre)) +
+  geom_line(linewidth = 1.2, alpha = 0.8) +
+  geom_point(size = 1.5) +
+  scale_color_viridis_d() +
+  labs(
+    title = "Genre Popularity Evolution Over Time",
+    subtitle = "Average popularity score by genre and year",
+    x = "Release Year",
+    y = "Average Popularity Score",
+    color = "Genre"
+  ) +
+  scale_x_continuous(breaks = seq(min(genre_by_year$release_year), 
+                                 max(genre_by_year$release_year), 
+                                 by = 5)) +
+  custom_theme +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9)
   )
-)
 
-cat("=== KEY TRENDS SUMMARY ===\n")
-print(trends_summary, row.names = FALSE)
-cat("\n")
+ggsave("genre_evolution_over_time.png", genre_evolution_plot, 
+       width = 12, height = 8, dpi = 300, bg = "white")
 
-# 6. ADDITIONAL INSIGHTS
-cat("=== ADDITIONAL INSIGHTS ===\n")
+# Audio features trends over time
+# Select key audio features
+key_features <- c("danceability", "energy", "acousticness", "valence")
 
-# Most popular years overall
-popular_years <- spotify_data %>%
+# Prepare data for audio features trends
+audio_features_by_year <- spotify_data %>%
+  filter(release_year >= 1950 & release_year <= 2023) %>%
   group_by(release_year) %>%
   summarise(
-    avg_popularity = mean(track_popularity, na.rm = TRUE),
-    track_count = n(),
+    across(all_of(key_features), mean),
+    count = n(),
     .groups = 'drop'
   ) %>%
-  filter(track_count >= 100) %>%
-  arrange(desc(avg_popularity)) %>%
-  head(5)
+  filter(count >= 10) %>%  # Only include years with sufficient data
+  pivot_longer(
+    cols = all_of(key_features),
+    names_to = "feature",
+    values_to = "value"
+  )
 
-cat("Top 5 years by average track popularity:\n")
-print(popular_years)
-cat("\n")
+# Plot audio features trends
+audio_features_plot <- ggplot(audio_features_by_year, aes(x = release_year, 
+                                                        y = value, 
+                                                        color = feature)) +
+  geom_line(linewidth = 1.2, alpha = 0.8) +
+  geom_smooth(method = "loess", se = FALSE, linewidth = 0.8, alpha = 0.8) +
+  scale_color_viridis_d() +
+  labs(
+    title = "Audio Features Trends Over Time",
+    subtitle = "Evolution of key audio characteristics in music",
+    x = "Release Year",
+    y = "Average Value (0-1 scale)",
+    color = "Audio Feature"
+  ) +
+  scale_x_continuous(breaks = seq(min(audio_features_by_year$release_year), 
+                                 max(audio_features_by_year$release_year), 
+                                 by = 5)) +
+  custom_theme +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9)
+  )
 
-# Genre diversity over time
-genre_diversity <- spotify_data %>%
+ggsave("audio_features_trends.png", audio_features_plot, 
+       width = 12, height = 8, dpi = 300, bg = "white")
+
+# Song duration trends
+duration_by_year <- spotify_data %>%
+  filter(release_year >= 1950 & release_year <= 2023) %>%
   group_by(release_year) %>%
   summarise(
-    unique_genres = n_distinct(playlist_genre),
-    total_tracks = n(),
+    avg_duration_sec = mean(duration_ms) / 1000,  # Convert to seconds
+    count = n(),
     .groups = 'drop'
   ) %>%
-  filter(total_tracks >= 50)
+  filter(count >= 10)  # Only include years with sufficient data
 
-diversity_trend <- cor.test(genre_diversity$release_year, genre_diversity$unique_genres)
-cat("Genre diversity trend over time:\n")
-cat("Correlation:", round(diversity_trend$estimate, 4), "\n")
-cat("P-value:", format.pval(diversity_trend$p.value), "\n\n")
+# Plot duration trends
+duration_plot <- ggplot(duration_by_year, aes(x = release_year, y = avg_duration_sec)) +
+  geom_line(color = "#2E86AB", linewidth = 1.2) +
+  geom_point(color = "#A23B72", size = 2) +
+  geom_smooth(method = "loess", color = "#F18F01", se = TRUE, linewidth = 1, alpha = 0.2) +
+  labs(
+    title = "Song Duration Trends Over Time",
+    subtitle = "Average track length in seconds by year",
+    x = "Release Year",
+    y = "Average Duration (seconds)"
+  ) +
+  scale_x_continuous(breaks = seq(min(duration_by_year$release_year), 
+                                 max(duration_by_year$release_year), 
+                                 by = 5)) +
+  custom_theme
 
-cat("Generated files:\n")
-cat("1. genre_evolution_over_time.png - Genre popularity trends\n")
-cat("2. title_length_trends.png - Song title length evolution\n")
-cat("3. collaboration_trends.png - Collaboration percentage over time\n")
-cat("4. collaboration_effect_by_genre.png - Collaboration impact by genre\n")
+ggsave("song_duration_trends.png", duration_plot, 
+       width = 12, height = 8, dpi = 300, bg = "white")
 
-# 7. FINAL RECOMMENDATIONS FOR RECORD LABELS
-cat("\n=== RECOMMENDATIONS FOR RECORD LABELS ===\n")
-cat("Based on the trends analysis:\n\n")
-
-cat("1. GENRE STRATEGY:\n")
-cat("   - Focus on", genre_summary$playlist_genre[1], "genre (highest avg popularity:", 
-    round(genre_summary$avg_popularity[1], 1), ")\n")
-cat("   - Consider diversifying portfolio as genre preferences evolve\n\n")
-
-cat("2. TITLE STRATEGY:\n")
-if(title_trend_test$estimate > 0) {
-  cat("   - Titles are getting LONGER over time\n")
-  cat("   - Consider more descriptive, longer titles for modern appeal\n")
-} else {
-  cat("   - Titles are getting SHORTER over time\n")
-  cat("   - Consider concise, catchy titles for modern appeal\n")
-}
-cat("\n")
-
-cat("3. COLLABORATION STRATEGY:\n")
-if(collab_test$p.value < 0.05) {
-  if(collab_test$estimate[1] > collab_test$estimate[2]) {
-    cat("   - Collaborations significantly BOOST popularity by", 
-        round(collab_test$estimate[1] - collab_test$estimate[2], 1), "points\n")
-    cat("   - Actively pursue collaborative projects\n")
-  } else {
-    cat("   - Solo tracks perform better than collaborations\n")
-    cat("   - Focus on developing individual artist brands\n")
-  }
-} else {
-  cat("   - No significant difference between solo and collaborative tracks\n")
-  cat("   - Base collaboration decisions on artistic merit rather than popularity impact\n")
-}
-
-# Best genre for collaborations
-best_collab_genre <- collab_by_genre$playlist_genre[which.max(collab_by_genre$collab_advantage)]
-cat("   - Best genre for collaborations:", best_collab_genre, "\n")
-cat("   - Collaboration advantage:", round(max(collab_by_genre$collab_advantage, na.rm = TRUE), 1), "points\n")
-
-cat("\nAnalysis complete! Check generated visualizations for detailed insights.\n")
+cat("\nAnalysis completed! Generated visualization files:\n")
+cat("1. title_length_trends.png - Track title length over time\n")
+cat("2. collaboration_effect.png - Impact of collaborations on popularity\n")
+cat("3. collaboration_trends.png - Collaboration trends over time\n")
+cat("4. collaboration_effect_by_genre.png - Impact of collaborations by genre\n")
+cat("5. genre_evolution_over_time.png - Genre popularity evolution\n")
+cat("6. audio_features_trends.png - Audio features trends over time\n")
+cat("7. song_duration_trends.png - Song duration trends over time\n")
